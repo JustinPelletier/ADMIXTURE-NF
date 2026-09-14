@@ -1,87 +1,86 @@
 # DataSet + Reference ADMIXTURE Pipeline
 
-This Nextflow DSL2 pipeline combines a chromosome-split genotyping dataset with a chromosome-split WGS reference dataset and runs ADMIXTURE.
+## Description
 
-The pipeline:
+This Nextflow DSL2 pipeline is designed to run [ADMIXTURE](https://dalexander.github.io/admixture/) analysis on a user-provided DataSet and a reference dataset.
 
-1. Filters and normalizes the DataSet VCFs.
-2. Restricts the WGS reference to positions present in the DataSet.
-3. Retains exact CHROM/POS/REF/ALT matches.
-4. Merges samples chromosome by chromosome.
-5. Converts each chromosome directly to PLINK format.
-6. Merges chromosomes and applies genome-wide QC.
-7. Performs LD pruning.
-8. Runs ADMIXTURE from K=2 through `max_k`.
-9. Produces ADMIXTURE and cross-validation plots.
+It performs variant QC, identifies variants shared between both datasets, merges their samples, applies LD pruning, and runs ADMIXTURE from K=2 to a user-defined maximum K.
+
+The pipeline is configured for a UNIX environment and, more specifically, the Digital Research Alliance of Canada Narval cluster using Slurm. The configuration can be adapted for other systems.
+
+## Pipeline steps
+
+1. Subset the DataSet using a sample keep list.
+2. Normalize and filter the DataSet VCFs.
+3. Extract the retained DataSet variant positions.
+4. Retrieve only those positions from the WGS reference VCFs.
+5. Normalize and filter the reference variants.
+6. Retain exact CHROM/POS/REF/ALT matches between datasets.
+7. Merge samples separately for each chromosome.
+8. Convert each chromosome directly to PLINK BED/BIM/FAM.
+9. Merge the chromosome-specific PLINK files.
+10. Apply genome-wide sample and variant QC.
+11. Perform LD pruning.
+12. Run ADMIXTURE from K=2 through `max_k`.
+13. Generate ADMIXTURE ancestry and cross-validation plots.
+
+Restricting the WGS reference to DataSet positions avoids processing every WGS variant.
 
 ## Directory structure
 
 ```text
 project/
 ├── ADMIXTURE_with_ref.nf
-├── ADMIXTURE_with_ref.config
+├── nextflow.config
 ├── README.md
 └── bin/
     ├── plot_admixture.R
     └── plot_cv.R
 ```
 
-Make the plotting scripts executable:
-
-```bash
-chmod +x bin/plot_admixture.R bin/plot_cv.R
-```
-
-Nextflow automatically adds the `bin/` directory to the process `PATH`.
+Nextflow automatically adds executable scripts from `bin/` to the process `PATH`.
 
 ## Requirements
 
+The pipeline requires:
+
 - Nextflow 23.10 or newer
-- bcftools and tabix
+- bcftools
+- tabix
 - PLINK 1.9
 - ADMIXTURE
-- R packages:
-  - `ggplot2`
-  - `patchwork`
+- R
+- R packages `ggplot2` and `patchwork`
 
-Current Narval modules:
+The Narval configuration currently uses:
 
-```groovy
-module = 'StdEnv/2023:bcftools/1.22:plink/1.9b_6.21-x86_64'
+```text
+bcftools/1.22
+plink/1.9b_6.21-x86_64
+r/4.6.1
 ```
 
-For plotting:
+ADMIXTURE must be downloaded separately from its [official repository](https://github.com/NovembreLab/admixture).
 
-```groovy
-module = 'StdEnv/2023:r/4.6.1'
-```
+## Input requirements
 
-ADMIXTURE is provided using an absolute path in the configuration.
-
-## Input files
-
-Both datasets must:
+The DataSet and reference VCFs must:
 
 - Use the same genome build.
 - Use compatible chromosome names.
 - Be split by chromosome.
-- Be bgzip-compressed VCF files.
-- Have `.tbi` or `.csi` indexes.
+- Be bgzip-compressed.
+- Have a `.tbi` or `.csi` index.
 
-The reference FASTA must have a matching `.fai` index.
+The reference FASTA must have a corresponding `.fai` index.
 
-Example VCF patterns:
+Sample IDs must be unique between the DataSet and reference datasets.
 
-```groovy
-dataset_vcfs = '/path/to/dataset/chr{chr}.vcf.gz'
-reference_vcfs = '/path/to/reference/chr{chr}.vcf.gz'
-```
+## Files to prepare
 
-The literal `{chr}` is replaced with each chromosome number.
+### Sample keep lists
 
-## Sample keep lists
-
-Provide one sample ID per line:
+Prepare one file for each dataset containing one sample ID per line:
 
 ```text
 SAMPLE001
@@ -89,18 +88,11 @@ SAMPLE002
 SAMPLE003
 ```
 
-The IDs must match the corresponding VCF sample IDs exactly.
+The sample IDs must exactly match the VCF sample IDs.
 
-A sample cannot occur in both keep lists.
+### Population metadata
 
-```groovy
-dataset_keep = '/path/to/dataset.keep.txt'
-reference_keep = '/path/to/reference.keep.txt'
-```
-
-## Metadata files
-
-Metadata files must be tab-separated and contain:
+Prepare one tab-separated metadata file for each dataset:
 
 ```tsv
 sample_id	population
@@ -108,24 +100,32 @@ SAMPLE001	Population_1
 SAMPLE002	Population_1
 ```
 
-Additional columns are ignored.
+The column names must be exactly:
 
-```groovy
-dataset_metadata = '/path/to/dataset_metadata.tsv'
-reference_metadata = '/path/to/reference_metadata.tsv'
+```text
+sample_id
+population
 ```
 
-The reference populations are shown in the top row of each ADMIXTURE plot. DataSet populations or clusters are shown underneath.
+Additional columns are ignored.
 
-Labels such as `Cluster_1`, `Cluster_2`, and `Cluster_10` are ordered numerically.
+Population labels are used as facets in the ADMIXTURE plots. Labels such as `Cluster_1`, `Cluster_2`, and `Cluster_10` are ordered numerically.
 
-## Main parameters
+## Configuration
+
+Copy the example configuration:
+
+```bash
+cp nextflow.config.example nextflow.config
+```
+
+The following parameters must be adapted:
 
 ```groovy
 params {
     dataset_vcfs = '/path/to/dataset/chr{chr}.vcf.gz'
     reference_vcfs = '/path/to/reference/chr{chr}.vcf.gz'
-    reference_fasta = '/path/to/GRCh38.fa'
+    reference_fasta = '/path/to/reference/GRCh38.fa'
 
     dataset_keep = '/path/to/dataset.keep.txt'
     reference_keep = '/path/to/reference.keep.txt'
@@ -135,80 +135,130 @@ params {
 
     admixture_executable = '/path/to/admixture'
 
-    chromosomes = [
-        '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
-        '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22'
-    ]
-
     outdir = 'results'
-
     max_k = 10
-
-    dataset_require_pass = false
-    reference_require_pass = true
-
-    pre_maf = 0.0
-    pre_max_missing = 0.02
-
-    mind = 0.05
-    geno = 0.02
-    maf = 0.01
-
-    ld_window = 50
-    ld_step = 5
-    ld_r2 = 0.1
-
-    admixture_cv = 10
-    admixture_seed = 2026
 }
 ```
 
-### FILTER handling
+The VCF patterns must contain the literal `{chr}` placeholder.
 
-If the DataSet uses `FILTER=.`, set:
+### Variant filtering
+
+If the DataSet uses `FILTER=.`, use:
 
 ```groovy
 dataset_require_pass = false
 ```
 
-If the reference contains PASS and non-PASS variants, use:
+To retain only PASS reference variants, use:
 
 ```groovy
 reference_require_pass = true
 ```
 
-### ADMIXTURE K values
+The main QC parameters are:
 
-The pipeline runs from K=2 through `max_k`.
+```groovy
+pre_maf = 0.0
+pre_max_missing = 0.02
 
-For example:
+mind = 0.05
+geno = 0.02
+maf = 0.01
+```
+
+### LD pruning
+
+The LD-pruning parameters are:
+
+```groovy
+ld_window = 50
+ld_step = 5
+ld_r2 = 0.1
+```
+
+A smaller `ld_r2` value applies more stringent LD pruning.
+
+### ADMIXTURE parameters
 
 ```groovy
 max_k = 10
+admixture_cv = 10
+admixture_seed = 2026
 ```
 
-runs K=2, K=3, …, K=10.
+The pipeline runs ADMIXTURE from K=2 through `max_k`.
 
-The plotting palette currently supports a maximum of K=10.
+The current plotting palette supports up to K=10.
+
+Set:
+
+```groovy
+admixture_cv = 0
+```
+
+to disable cross-validation.
+
+### Narval allocation
+
+Replace the allocation placeholder in the Narval profile:
+
+```groovy
+profiles {
+    narval {
+        process.executor = 'slurm'
+        process.clusterOptions = '--account=your-allocation'
+    }
+}
+```
+
+## Setup on Narval
+
+Load Nextflow:
+
+```bash
+module load nextflow
+```
+
+Make the plotting scripts executable:
+
+```bash
+chmod +x bin/plot_admixture.R bin/plot_cv.R
+```
+
+Confirm that ADMIXTURE is executable:
+
+```bash
+test -x /path/to/admixture
+```
+
+Confirm that the R packages are available:
+
+```bash
+module load StdEnv/2023 r/4.6.1
+
+Rscript -e 'packageVersion("ggplot2")'
+Rscript -e 'packageVersion("patchwork")'
+```
+
+If either package is unavailable, install it in your personal R library before launching the pipeline.
 
 ## Running the pipeline
 
 ```bash
-module load nextflow
-
 nextflow run ADMIXTURE_with_ref.nf \
-    -c ADMIXTURE_with_ref.config \
+    -c nextflow.config \
     -profile narval \
     -resume
 ```
 
-Parameters can also be overridden:
+Parameters may also be overridden from the command line:
 
 ```bash
 nextflow run ADMIXTURE_with_ref.nf \
-    -c ADMIXTURE_with_ref.config \
+    -c nextflow.config \
     -profile narval \
-    --max_k 8 \
+    --max_k 10 \
     --ld_r2 0.1 \
     -resume
 ```
@@ -218,72 +268,33 @@ nextflow run ADMIXTURE_with_ref.nf \
 ```text
 results/
 ├── 01_qc_vcfs/
+│   ├── dataset/
+│   └── reference/
 ├── 02_plink_by_chr/
 ├── 03_genomewide_plink/
 ├── 04_plink_qc/
 ├── 05_admixture_input/
 ├── 06_admixture/
+│   ├── K2/
+│   ├── K3/
+│   └── ...
 ├── 07_admixture_plots/
 ├── 08_cross_validation/
 └── pipeline_info/
 ```
 
-Important outputs include:
+### Main outputs
 
-```text
-06_admixture/K*/
-    ADMIXTURE Q, P, and log files
+| Directory | Contents |
+|---|---|
+| `01_qc_vcfs` | Normalized and filtered chromosome VCFs |
+| `02_plink_by_chr` | Chromosome-specific PLINK files and intersection statistics |
+| `03_genomewide_plink` | Merged genome-wide PLINK dataset |
+| `04_plink_qc` | PLINK dataset after genome-wide QC |
+| `05_admixture_input` | LD-pruned dataset used by ADMIXTURE |
+| `06_admixture/K*` | ADMIXTURE Q, P, and log files |
+| `07_admixture_plots` | Ancestry plots and plotted sample-order TSV files |
+| `08_cross_validation` | CV-error summary and CV plot |
+| `pipeline_info` | Nextflow report, trace, timeline, and DAG |
 
-07_admixture_plots/
-    ADMIXTURE ancestry PNGs
-    plotted sample-order TSVs
-
-08_cross_validation/
-    admixture_cv_errors.tsv
-    admixture_cv_plot.png
-```
-
-The ADMIXTURE plots use a fixed 10-color palette and contain no legend. The Reference and DataSet samples are plotted in separate rows so their population facets remain readable.
-
-## Common issues
-
-### `bcftools: command not found`
-
-Make sure the appropriate module is assigned to every process using bcftools:
-
-```groovy
-module = 'StdEnv/2023:bcftools/1.22'
-```
-
-### ADMIXTURE executable not found
-
-Check that the configured binary exists and is executable:
-
-```bash
-test -x /path/to/admixture
-```
-
-### Missing reference index
-
-Each reference VCF requires either:
-
-```text
-chr1.vcf.gz.tbi
-```
-
-or:
-
-```text
-chr1.vcf.gz.csi
-```
-
-### Existing Nextflow reports
-
-Allow Nextflow to overwrite previous reports:
-
-```groovy
-timeline.overwrite = true
-report.overwrite = true
-trace.overwrite = true
-dag.overwrite = true
-```
+The ancestry plots display reference samples on top and DataSet samples underneath. Population labels are shown as facets, and every K uses a fixed set of ancestry-component colors.
