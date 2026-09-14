@@ -68,11 +68,6 @@ plot_cv.R
 
 Nextflow automatically adds executable files from `bin/` to the process `PATH`.
 
-Make sure the scripts are executable:
-
-```bash
-chmod +x bin/plot_admixture.R bin/plot_cv.R
-```
 
 ### `examples/`
 
@@ -83,7 +78,7 @@ The `examples/` directory contains templates showing the required formats for:
 - DataSet population metadata
 - Reference population metadata
 
-Copy and modify these files for your analysis.
+Copy and modify these files for your analysis or use your pre-existing files as long as they are formatted in the exact same way.
 
 ## Requirements
 
