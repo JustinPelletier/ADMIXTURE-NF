@@ -484,3 +484,10 @@ The cross-validation directory contains:
 admixture_cv_errors.tsv
 admixture_cv_plot.png
 ```
+
+## References
+
+ADMIXTURE software:
+
+D.H. Alexander, J. Novembre, and K. Lange. Fast model-based estimation of ancestry in unrelated individuals. Genome Research, 19:1655–1664, 2009. 
+
