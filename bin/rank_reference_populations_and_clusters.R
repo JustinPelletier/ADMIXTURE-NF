@@ -197,9 +197,42 @@ p_heat <- ggplot(heat,aes(dataset_cluster,comparison_group,fill=js_similarity))+
        subtitle="Reference populations and other CaG clusters",x="Focal CaG cluster",y="Comparison group")+
   theme_minimal(base_size=11)+
   theme(axis.text.x=element_text(angle=45,hjust=1),panel.grid=element_blank())
-ggsave(file.path(d$output_dir,paste0(prefix,"similarity_heatmap.png")),p_heat,
-       width=max(10,0.45*length(unique(heat$dataset_cluster))),
-       height=min(24,max(8,0.25*length(unique(heat$comparison_group)))),dpi=300,limitsize=FALSE)
+heat_width <- max(
+  10,
+  0.45 * length(unique(heat$dataset_cluster))
+)
+
+heat_height <- min(
+  24,
+  max(
+    8,
+    0.25 * length(unique(heat$comparison_group))
+  )
+)
+
+ggsave(
+  file.path(
+    d$output_dir,
+    paste0(prefix, "similarity_heatmap.png")
+  ),
+  p_heat,
+  width = heat_width,
+  height = heat_height,
+  dpi = 600,
+  limitsize = FALSE
+)
+
+ggsave(
+  file.path(
+    d$output_dir,
+    paste0(prefix, "similarity_heatmap.pdf")
+  ),
+  p_heat,
+  width = heat_width,
+  height = heat_height,
+  device = "pdf",
+  limitsize = FALSE
+)
 
 # Top-match overview. References and other CaG clusters compete in one ranking.
 top_plot <- ranked[ranked$rank<=d$plot_top_n,]
@@ -216,9 +249,36 @@ p_top <- ggplot(top_plot,aes(js_similarity,key))+
   labs(title=paste0("Top ",d$plot_top_n," population or cluster matches at K=",k),
        x="Jensen-Shannon similarity",y=NULL)+
   theme_minimal(base_size=10)+theme(panel.grid.major.y=element_blank(),legend.position="none")
-ggsave(file.path(d$output_dir,paste0(prefix,"top_population_and_cluster_matches.png")),p_top,
-       width=14,height=max(8,2.2*ceiling(length(unique(top_plot$dataset_cluster))/4)),
-       dpi=300,limitsize=FALSE)
+top_plot_height <- max(
+  8,
+  2.2 * ceiling(
+    length(unique(top_plot$dataset_cluster)) / 4
+  )
+)
+
+ggsave(
+  file.path(
+    d$output_dir,
+    paste0(prefix, "top_population_and_cluster_matches.png")
+  ),
+  p_top,
+  width = 14,
+  height = top_plot_height,
+  dpi = 600,
+  limitsize = FALSE
+)
+
+ggsave(
+  file.path(
+    d$output_dir,
+    paste0(prefix, "top_population_and_cluster_matches.pdf")
+  ),
+  p_top,
+  width = 14,
+  height = top_plot_height,
+  device = "pdf",
+  limitsize = FALSE
+)
 
 # One profile plot per CaG cluster versus its leading groups of either type.
 for(cluster in rownames(ca$q)) {
@@ -240,8 +300,41 @@ for(cluster in rownames(ca$q)) {
          subtitle="Thicker line: CaG cluster centroid",x="ADMIXTURE component",y="Mean proportion",colour="Group")+
     theme_minimal(base_size=11)+theme(panel.grid.minor=element_blank(),legend.position="bottom")
   safe_cluster <- gsub("[^A-Za-z0-9_.-]+","_",cluster)
-  ggsave(file.path(d$output_dir,paste0(prefix,safe_cluster,".top_comparison_profiles.png")),
-         p_profile,width=9,height=6,dpi=300)
+  safe_cluster <- gsub(
+  "[^A-Za-z0-9_.-]+",
+  "_",
+  cluster
+  )
+
+  ggsave(
+    file.path(
+      d$output_dir,
+      paste0(
+        prefix,
+        safe_cluster,
+        ".top_comparison_profiles.png"
+      )
+    ),
+    p_profile,
+    width = 9,
+    height = 6,
+    dpi = 600
+  )
+
+  ggsave(
+    file.path(
+      d$output_dir,
+      paste0(
+        prefix,
+        safe_cluster,
+        ".top_comparison_profiles.pdf"
+      )
+    ),
+    p_profile,
+    width = 9,
+    height = 6,
+    device = "pdf"
+  )
 }
 
 
