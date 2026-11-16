@@ -8,8 +8,8 @@ nextflow.enable.dsl = 2
 
 
 def validateParams() {
-    if (!params.dataset_vcfs)
-        error '--dataset_vcfs is required'
+    if (!params.cag_vcfs)
+        error '--cag_vcfs is required'
 
     if (!params.reference_vcfs)
         error '--reference_vcfs is required'
@@ -17,14 +17,14 @@ def validateParams() {
     if (!params.reference_fasta)
         error '--reference_fasta is required'
 
-    if (!params.dataset_keep)
-        error '--dataset_keep is required'
+    if (!params.cag_keep)
+        error '--cag_keep is required'
 
     if (!params.reference_keep)
         error '--reference_keep is required'
 
-    if (!params.dataset_metadata)
-        error '--dataset_metadata is required'
+    if (!params.cag_metadata)
+        error '--cag_metadata is required'
 
     if (!params.reference_metadata)
         error '--reference_metadata is required'
@@ -45,18 +45,36 @@ def validateParams() {
     if ((params.pre_max_missing as double) < 0 ||
         (params.pre_max_missing as double) > 1)
         error '--pre_max_missing must be between 0 and 1'
+
+    if (params.run_posthoc) {
+        if ((params.admixture_cv as int) < 1) {
+            error '--run_posthoc requires --admixture_cv to be greater than zero'
+        }
+
+        if ((params.posthoc_top_n as int) < 1) {
+            error '--posthoc_top_n must be >= 1'
+        }
+
+        if ((params.posthoc_plot_top_n as int) < 1) {
+            error '--posthoc_plot_top_n must be >= 1'
+        }
+
+        if ((params.posthoc_min_reference_n as int) < 1) {
+            error '--posthoc_min_reference_n must be >= 1'
+        }
+    }
 }
 
 
 /*
- * Normalize and QC the DataSet array dataset.
+ * Normalize and QC the CaG array dataset.
  *
  * A chromosome-position file is also generated so that only potentially
  * shared positions are retrieved from the much larger reference WGS VCF.
  */
-process NORMALIZE_DATASET {
-    tag { "DataSet:chr${chr}" }
-    publishDir "${params.outdir}/01_qc_vcfs/dataset", mode: 'copy'
+process NORMALIZE_CAG {
+    tag { "CaG:chr${chr}" }
+    publishDir "${params.outdir}/01_qc_vcfs/cag", mode: 'copy'
 
     input:
     tuple val(chr), path(vcf), path(keep)
@@ -64,13 +82,13 @@ process NORMALIZE_DATASET {
 
     output:
     tuple val(chr),
-          path("dataset.chr${chr}.qc.vcf.gz"),
-          path("dataset.chr${chr}.qc.vcf.gz.tbi"),
-          path("dataset.chr${chr}.positions.tsv"),
+          path("cag.chr${chr}.qc.vcf.gz"),
+          path("cag.chr${chr}.qc.vcf.gz.tbi"),
+          path("cag.chr${chr}.positions.tsv"),
           emit: qc_vcf
 
     script:
-    def passArg = params.dataset_require_pass ? '-f PASS' : ''
+    def passArg = params.cag_require_pass ? '-f PASS' : ''
 
     def mafArg = (params.pre_maf as double) > 0
         ? "-i 'MAF>=${params.pre_maf}'"
@@ -104,24 +122,24 @@ process NORMALIZE_DATASET {
             ${mafArg} \
             ${missingArg} \
             -Oz \
-            -o dataset.chr${chr}.qc.vcf.gz
+            -o cag.chr${chr}.qc.vcf.gz
 
-    tabix -f -p vcf dataset.chr${chr}.qc.vcf.gz
+    tabix -f -p vcf cag.chr${chr}.qc.vcf.gz
 
-    n_dataset=\$(bcftools index -n dataset.chr${chr}.qc.vcf.gz)
+    n_cag=\$(bcftools index -n cag.chr${chr}.qc.vcf.gz)
 
-    if [ "\$n_dataset" -eq 0 ]; then
-        echo "ERROR: DataSet QC retained no variants for chromosome ${chr}" >&2
+    if [ "\$n_cag" -eq 0 ]; then
+        echo "ERROR: CaG QC retained no variants for chromosome ${chr}" >&2
         exit 1
     fi
 
     bcftools query \
         -f '%CHROM\\t%POS\\n' \
-        dataset.chr${chr}.qc.vcf.gz \
-        > dataset.chr${chr}.positions.tsv
+        cag.chr${chr}.qc.vcf.gz \
+        > cag.chr${chr}.positions.tsv
 
-    if [ ! -s dataset.chr${chr}.positions.tsv ]; then
-        echo "ERROR: DataSet position file is empty for chromosome ${chr}" >&2
+    if [ ! -s cag.chr${chr}.positions.tsv ]; then
+        echo "ERROR: CaG position file is empty for chromosome ${chr}" >&2
         exit 1
     fi
     """
@@ -129,7 +147,7 @@ process NORMALIZE_DATASET {
 
 
 /*
- * Retrieve only reference variants located at DataSet positions before
+ * Retrieve only reference variants located at CaG positions before
  * normalization and QC.
  */
 process NORMALIZE_REFERENCE {
@@ -141,16 +159,16 @@ process NORMALIZE_REFERENCE {
           path(reference_vcf),
           path(reference_index),
           path(reference_keep),
-          path(dataset_vcf),
-          path(dataset_tbi),
-          path(dataset_positions)
+          path(cag_vcf),
+          path(cag_tbi),
+          path(cag_positions)
 
     tuple path(fasta), path(fasta_fai)
 
     output:
     tuple val(chr),
-          path(dataset_vcf),
-          path(dataset_tbi),
+          path(cag_vcf),
+          path(cag_tbi),
           path("reference.chr${chr}.qc.vcf.gz"),
           path("reference.chr${chr}.qc.vcf.gz.tbi"),
           emit: paired_qc
@@ -171,7 +189,7 @@ process NORMALIZE_REFERENCE {
 
     bcftools view \
         --threads ${task.cpus} \
-        -R ${dataset_positions} \
+        -R ${cag_positions} \
         -S ${reference_keep} \
         ${passArg} \
         -m2 \
@@ -218,8 +236,8 @@ process INTERSECT_MERGE {
 
     input:
     tuple val(chr),
-          path(dataset),
-          path(dataset_tbi),
+          path(cag),
+          path(cag_tbi),
           path(reference),
           path(reference_tbi)
 
@@ -242,44 +260,44 @@ process INTERSECT_MERGE {
         -c none \
         -n=2 \
         -w1 \
-        ${dataset} \
+        ${cag} \
         ${reference} \
         -Oz \
-        -o dataset.shared.vcf.gz
+        -o cag.shared.vcf.gz
 
     bcftools isec \
         --threads ${task.cpus} \
         -c none \
         -n=2 \
         -w2 \
-        ${dataset} \
+        ${cag} \
         ${reference} \
         -Oz \
         -o reference.shared.vcf.gz
 
-    tabix -f -p vcf dataset.shared.vcf.gz
+    tabix -f -p vcf cag.shared.vcf.gz
     tabix -f -p vcf reference.shared.vcf.gz
 
-    n_dataset_qc=\$(bcftools index -n ${dataset})
+    n_cag_qc=\$(bcftools index -n ${cag})
     n_reference_qc=\$(bcftools index -n ${reference})
-    n_dataset_shared=\$(bcftools index -n dataset.shared.vcf.gz)
+    n_cag_shared=\$(bcftools index -n cag.shared.vcf.gz)
     n_reference_shared=\$(bcftools index -n reference.shared.vcf.gz)
 
-    if [ "\$n_dataset_shared" -ne "\$n_reference_shared" ]; then
+    if [ "\$n_cag_shared" -ne "\$n_reference_shared" ]; then
         echo "ERROR: shared-variant counts differ for chromosome ${chr}" >&2
-        echo "DataSet: \$n_dataset_shared" >&2
+        echo "CaG: \$n_cag_shared" >&2
         echo "Reference: \$n_reference_shared" >&2
         exit 1
     fi
 
-    if [ "\$n_dataset_shared" -eq 0 ]; then
+    if [ "\$n_cag_shared" -eq 0 ]; then
         echo "ERROR: no exact shared variants found for chromosome ${chr}" >&2
         exit 1
     fi
 
     bcftools merge \
         --threads ${task.cpus} \
-        dataset.shared.vcf.gz \
+        cag.shared.vcf.gz \
         reference.shared.vcf.gz \
         -Ou |
         bcftools annotate \
@@ -292,9 +310,9 @@ process INTERSECT_MERGE {
 
     n_merged=\$(bcftools index -n merged.chr${chr}.vcf.gz)
 
-    if [ "\$n_merged" -ne "\$n_dataset_shared" ]; then
+    if [ "\$n_merged" -ne "\$n_cag_shared" ]; then
         echo "ERROR: merged and shared variant counts differ for chromosome ${chr}" >&2
-        echo "Shared: \$n_dataset_shared" >&2
+        echo "Shared: \$n_cag_shared" >&2
         echo "Merged: \$n_merged" >&2
         exit 1
     fi
@@ -317,11 +335,11 @@ process INTERSECT_MERGE {
     fi
 
     printf \
-        'chromosome\\tdataset_qc_variants\\treference_qc_variants\\tshared_exact_variants\\tplink_variants\\tsamples\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \
+        'chromosome\\tcag_qc_variants\\treference_qc_variants\\tshared_exact_variants\\tplink_variants\\tsamples\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \
         '${chr}' \
-        "\$n_dataset_qc" \
+        "\$n_cag_qc" \
         "\$n_reference_qc" \
-        "\$n_dataset_shared" \
+        "\$n_cag_shared" \
         "\$n_plink" \
         "\$n_samples" \
         > chr${chr}.intersection.stats.tsv
@@ -555,9 +573,9 @@ process PLOT_ADMIXTURE {
 
     input:
     tuple val(k), path(q), path(p), path(log), path(fam)
-    path dataset_metadata, stageAs: 'dataset_metadata.tsv'
+    path cag_metadata, stageAs: 'cag_metadata.tsv'
     path reference_metadata, stageAs: 'reference_metadata.tsv'
-    path dataset_keep, stageAs: 'dataset.keep.txt'
+    path cag_keep, stageAs: 'cag.keep.txt'
     path reference_keep, stageAs: 'reference.keep.txt'
 
     output:
@@ -572,9 +590,9 @@ process PLOT_ADMIXTURE {
         ${q} \
         ${fam} \
         ${k} \
-        ${dataset_metadata} \
+        ${cag_metadata} \
         ${reference_metadata} \
-        ${dataset_keep} \
+        ${cag_keep} \
         ${reference_keep} \
         admixture.K${k}.png \
         admixture.K${k}.plot_order.tsv
@@ -587,14 +605,19 @@ process PLOT_ADMIXTURE {
  */
 process PLOT_CV {
     tag 'cross-validation'
-    publishDir "${params.outdir}/08_cross_validation", mode: 'copy'
+
+    publishDir(
+        "${params.outdir}/08_cross_validation",
+        mode: 'copy',
+        overwrite: true
+    )
 
     input:
     path logs
 
     output:
-    path 'admixture_cv_errors.tsv'
-    path 'admixture_cv_plot.png'
+    path 'admixture_cv_errors.tsv', emit: cv_table
+    path 'admixture_cv_plot.png', emit: cv_plot
 
     script:
     """
@@ -604,6 +627,49 @@ process PLOT_CV {
         admixture_cv_errors.tsv \
         admixture_cv_plot.png \
         ${logs}
+    """
+}
+
+process RANK_REFERENCE_POPULATIONS_AND_CLUSTERS {
+    tag "best CV: K=${k}"
+
+    publishDir(
+        "${params.outdir}/09_posthoc",
+        mode: 'copy',
+        overwrite: true
+    )
+
+    input:
+    tuple val(k), path(q), path(p), path(admixture_log), path(fam)
+
+    path cag_metadata, stageAs: 'cag_metadata.tsv'
+    path reference_metadata, stageAs: 'reference_metadata.tsv'
+
+    output:
+    path 'K*.tsv', emit: tables
+    path 'K*.png', emit: plots
+
+    script:
+    """
+    set -euo pipefail
+
+    mkdir -p posthoc_admixture/K${k}
+
+    cp -L ${q} \
+        posthoc_admixture/K${k}/admixture_input.${k}.Q
+
+    cp -L ${fam} \
+        posthoc_admixture/K${k}/admixture_input.fam
+
+    rank_reference_populations_and_clusters.R \
+        --admixture-dir posthoc_admixture \
+        --cag-metadata ${cag_metadata} \
+        --reference-metadata ${reference_metadata} \
+        --output-dir . \
+        --k ${k} \
+        --top-n ${params.posthoc_top_n} \
+        --plot-top-n ${params.posthoc_plot_top_n} \
+        --min-reference-n ${params.posthoc_min_reference_n}
     """
 }
 
@@ -623,8 +689,8 @@ workflow {
 
     chr_values = params.chromosomes as List
 
-    dataset_keep_file = file(
-        params.dataset_keep,
+    cag_keep_file = file(
+        params.cag_keep,
         checkIfExists: true
     )
 
@@ -633,36 +699,36 @@ workflow {
         checkIfExists: true
     )
 
-    dataset_metadata_ch = Channel.value(
-        file(params.dataset_metadata, checkIfExists: true)
+    cag_metadata_ch = Channel.value(
+        file(params.cag_metadata, checkIfExists: true)
     )
 
     reference_metadata_ch = Channel.value(
         file(params.reference_metadata, checkIfExists: true)
     )
 
-    dataset_keep_ch = Channel.value(dataset_keep_file)
+    cag_keep_ch = Channel.value(cag_keep_file)
     reference_keep_ch = Channel.value(reference_keep_file)
 
     /*
-     * Construct DataSet chromosome inputs.
+     * Construct CaG chromosome inputs.
      */
-    dataset_ch = Channel
+    cag_ch = Channel
         .fromList(chr_values)
         .map { chr ->
-            def dataset_path = params.dataset_vcfs
+            def cag_path = params.cag_vcfs
                 .toString()
                 .replace('{chr}', chr.toString())
 
             tuple(
                 chr,
-                file(dataset_path, checkIfExists: true),
-                dataset_keep_file
+                file(cag_path, checkIfExists: true),
+                cag_keep_file
             )
         }
 
-    NORMALIZE_DATASET(
-        dataset_ch,
+    NORMALIZE_CAG(
+        cag_ch,
         fasta_ch
     )
 
@@ -692,15 +758,15 @@ workflow {
         }
 
     /*
-     * Join reference inputs with the normalized DataSet chromosome files.
+     * Join reference inputs with the normalized CaG chromosome files.
      */
-    reference_with_dataset = reference_ch.join(
-        NORMALIZE_DATASET.out.qc_vcf,
+    reference_with_cag = reference_ch.join(
+        NORMALIZE_CAG.out.qc_vcf,
         by: 0
     )
 
     NORMALIZE_REFERENCE(
-        reference_with_dataset,
+        reference_with_cag,
         fasta_ch
     )
 
@@ -756,10 +822,10 @@ workflow {
         PLINK_QC.out.qc_bed
     )
 
+
     /*
-    * Generate one ADMIXTURE input tuple for every K from 2 through max_k.
-    * flatMap duplicates the single pruned fileset for each requested K.
-    */
+     * Generate one ADMIXTURE input tuple for every K from 2 through max_k.
+     */
     admixture_inputs = LD_PRUNE.out.pruned_bed
         .flatMap { bed, bim, fam ->
             (2..(params.max_k as int)).collect { k ->
@@ -772,26 +838,147 @@ workflow {
     )
 
     /*
-     * Plot ancestry proportions.
+     * Plot ancestry proportions for every K.
      */
     PLOT_ADMIXTURE(
         RUN_ADMIXTURE.out.results,
-        dataset_metadata_ch,
+        cag_metadata_ch,
         reference_metadata_ch,
-        dataset_keep_ch,
+        cag_keep_ch,
         reference_keep_ch
     )
 
     /*
-     * Collect cross-validation logs.
+     * Collect ADMIXTURE cross-validation logs from every K.
      */
     cv_logs = RUN_ADMIXTURE.out.results
-        .map { k, q, p, log, fam ->
-            log
+        .map { k, q, p, admixture_log, fam ->
+            admixture_log
         }
         .collect()
 
+    /*
+     * Create the CV table and plot.
+     */
     if ((params.admixture_cv as int) > 0) {
-        PLOT_CV(cv_logs)
+        PLOT_CV(
+            cv_logs
+        )
+
+        /*
+         * Run the post-hoc analysis using the K with the lowest
+         * cross-validation error.
+         */
+        if (params.run_posthoc) {
+            best_k_ch = PLOT_CV.out.cv_table
+                .map { cv_file ->
+                    def lines = cv_file.text
+                        .readLines()
+                        .findAll { line ->
+                            line.trim()
+                        }
+
+                    if (lines.size() < 2) {
+                        error(
+                            "No CV results were found in ${cv_file}"
+                        )
+                    }
+
+                    def header = lines[0].split('\t')
+
+                    def k_column = header.findIndexOf { column ->
+                        column == 'K'
+                    }
+
+                    def cv_column = header.findIndexOf { column ->
+                        column == 'CV_error'
+                    }
+
+                    if (k_column < 0 || cv_column < 0) {
+                        error(
+                            "The CV table must contain K and " +
+                            "CV_error columns: ${cv_file}"
+                        )
+                    }
+
+                    def cv_results = lines
+                        .drop(1)
+                        .collect { line ->
+                            def fields = line.split('\t')
+
+                            if (
+                                fields.size() <= k_column ||
+                                fields.size() <= cv_column
+                            ) {
+                                error(
+                                    "Malformed row in the CV table: ${line}"
+                                )
+                            }
+
+                            def tested_k = fields[k_column] as int
+                            def cv_error = fields[cv_column] as double
+
+                            if (
+                                Double.isNaN(cv_error) ||
+                                Double.isInfinite(cv_error)
+                            ) {
+                                error(
+                                    "Invalid CV error for K=${tested_k}: " +
+                                    "${cv_error}"
+                                )
+                            }
+
+                            tuple(
+                                tested_k,
+                                cv_error
+                            )
+                        }
+
+                    /*
+                     * Sort by CV error and then K.
+                     * The smaller K is selected in the event of a tie.
+                     */
+                    def best_result = cv_results.sort { left, right ->
+                        def cv_comparison =
+                            (left[1] as double) <=>
+                            (right[1] as double)
+
+                        if (cv_comparison != 0) {
+                            return cv_comparison
+                        }
+
+                        return(
+                            (left[0] as int) <=>
+                            (right[0] as int)
+                        )
+                    }[0]
+
+                    def best_k = best_result[0] as int
+                    def best_cv = best_result[1] as double
+
+                    log.info(
+                        "Lowest ADMIXTURE CV error: " +
+                        "K=${best_k}, CV_error=${best_cv}"
+                    )
+
+                    tuple(best_k)
+                }
+
+            /*
+             * Join the selected K with its corresponding ADMIXTURE
+             * Q, P, log and FAM files.
+             */
+            best_admixture_result = RUN_ADMIXTURE.out.results
+                .join(
+                    best_k_ch,
+                    by: 0
+                )
+
+            RANK_REFERENCE_POPULATIONS_AND_CLUSTERS(
+                best_admixture_result,
+                cag_metadata_ch,
+                reference_metadata_ch
+            )
+        }
     }
 }
