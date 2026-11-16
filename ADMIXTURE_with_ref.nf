@@ -580,6 +580,7 @@ process PLOT_ADMIXTURE {
 
     output:
     path "admixture.K${k}.png"
+    path "admixture.K${k}.png"
     path "admixture.K${k}.plot_order.tsv"
 
     script:
@@ -618,6 +619,7 @@ process PLOT_CV {
     output:
     path 'admixture_cv_errors.tsv', emit: cv_table
     path 'admixture_cv_plot.png', emit: cv_plot
+    path 'admixture_cv_plot.pdf', emit: cv_plot_pdf
 
     script:
     """
@@ -647,7 +649,8 @@ process RANK_REFERENCE_POPULATIONS_AND_CLUSTERS {
 
     output:
     path 'K*.tsv', emit: tables
-    path 'K*.png', emit: plots
+    path 'K*.png', emit: png_plots
+    path 'K*.pdf', emit: pdf_plots
 
     script:
     """
