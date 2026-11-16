@@ -12,6 +12,13 @@ output_tsv <- args[1]
 output_png <- args[2]
 logs <- args[-c(1, 2)]
 
+output_pdf <- sub(
+  "\\.png$",
+  ".pdf",
+  output_png,
+  ignore.case = TRUE
+)
+
 extract_cv <- function(path) {
   lines <- readLines(path, warn = FALSE)
   hit <- grep("CV error", lines, value = TRUE)
@@ -53,6 +60,17 @@ ggplot2::ggsave(
   width = 8,
   height = 5.5,
   units = "in",
-  dpi = 300,
+  dpi = 600,
+  bg = "white"
+)
+
+ggplot2::ggsave(
+  filename = output_pdf,
+  plot = p,
+  width = 10,
+  height = 6,
+  units = "in",
+  device = "pdf",
+  limitsize = FALSE,
   bg = "white"
 )
